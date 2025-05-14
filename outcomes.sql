@@ -7,7 +7,7 @@ SELECT
        cn.name patient_state
 FROM   patient_state ps
    JOIN program_workflow_state pws
-ON ps.state = pws.program_workflow_state_id and ps.voided=0
+ON ps.state = pws.program_workflow_state_id and ps.voided=0 and ps.voided=0
    JOIN patient_program pp
 ON ps.patient_program_id = pp.patient_program_id and pp.voided=0
    JOIN concept_name cn on  
