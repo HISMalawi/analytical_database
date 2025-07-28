@@ -541,7 +541,7 @@ ltd.lab_order_test_date,
 group_concat( distinct case when ltd.lab_test_type is not null and ltd.lab_test_type !='' then ltd.lab_test_type else null end )  lab_test_type,
 group_concat(distinct ltd.lab_reason_for_test)  lab_reason_for_test,
 group_concat( distinct case when ltd.lab_result_date is not null then ltd.lab_result_date else null end ) lab_result_date,
-group_concat( distinct concat(ltd.lab_test_type,':',ltd.lab_result)) lab_result,
+group_concat( distinct concat(ltd.lab_result_date,':',ltd.lab_result)) lab_result,
 group_concat( distinct case when ltd.sample_type is not null and ltd.sample_type !='' then ltd.sample_type else null end ) sample_type
 from 
 final_pull fp left join
