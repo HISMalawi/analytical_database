@@ -440,7 +440,7 @@ NULL allergic_to_cotrimaxole,
             CONCAT('[', fnd.drug_comb, ']'),
             '$[*]' COLUMNS (drug_id INT PATH '$')
         ) AS jt2
-        JOIN drug d2 ON ad.drug_id = jt2.drug_id
+        JOIN drug d2 ON d2.drug_id = jt2.drug_id
     ) AS dosage_on_non_art_treatment,
  (
         SELECT GROUP_CONCAT(
