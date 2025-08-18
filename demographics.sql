@@ -42,7 +42,7 @@ select
 	group_concat(distinct pi2.identifier) national_id
 from
 	person p
-join patient_program pp on
+left join patient_program pp on
 	p.person_id = pp.patient_id
 	and pp.program_id = 1
 	and p.voided = 0
