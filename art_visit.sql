@@ -48,41 +48,105 @@ LEFT JOIN concept_name cn2 ON o.value_coded = cn2.concept_id AND cn2.concept_nam
 ),
 final_pull as 
 (
-select distinct x.patient_id,x.visit_date,x.site_id from (
-select distinct e.patient_id,date(e.encounter_datetime) visit_date,
-(select property_value site_id from global_property where property='current_health_center_id') site_id
-from obs o
-join encounter e on o.encounter_id=e.encounter_id
-join concept_name cn on cn.concept_id=o.concept_id and cn.voided=0 and cn.locale='en'
-and cn.concept_name_type='FULLY_SPECIFIED'
-where o.concept_id in 
-(select concept_id from concept_name where name in ('HIV viral load','Amount dispensed')
-and voided=0 and locale='en'
-and concept_name_type='FULLY_SPECIFIED')
-and o.voided=0 and o.encounter_id is not null and o.person_id  is not null
-and e.voided = 0 and e.encounter_type in (54,25,57,13)
-and COALESCE(o.value_text,o.value_numeric) is not null
-union all 
-select distinct o.person_id patient_id,date(o.obs_datetime) visit_date,
-(select property_value site_id from global_property where property='current_health_center_id') site_id
-from obs o
-join concept_name cn on cn.concept_id=o.concept_id and cn.voided=0 and cn.locale='en'
-and cn.concept_name_type='FULLY_SPECIFIED'
-where o.concept_id in 
-(select concept_id from concept_name where name in ('HIV viral load','Amount dispensed')
-and voided=0 and locale='en'
-and concept_name_type='FULLY_SPECIFIED')
-and o.voided=0 and o.encounter_id is not null and o.person_id  is not null
-and COALESCE(o.value_text,o.value_numeric) is not null
-union all 
-select distinct ob.person_id patient_id,date(o.start_date) visit_date,
-(select property_value site_id from global_property where property='current_health_center_id') site_id
-from orders o
-join obs ob on o.order_id =ob.order_id 
-join concept_name cn on cn.concept_id=ob.concept_id and cn.voided=0 and cn.locale='en' 
-and cn.name in ('HIV viral load') and cn.concept_name_type='FULLY_SPECIFIED'
-where ob.voided=0 and o.voided=0 
-) x
+select
+	distinct x.patient_id,
+	x.visit_date,
+	x.site_id
+from
+	(
+	select
+		distinct e.patient_id,
+		date(e.encounter_datetime) visit_date,
+		(
+		select
+			property_value site_id
+		from
+			global_property
+		where
+			property = 'current_health_center_id') site_id
+	from
+		obs o
+	join encounter e on
+		o.encounter_id = e.encounter_id
+	join concept_name cn on
+		cn.concept_id = o.concept_id
+		and cn.voided = 0
+		and cn.locale = 'en'
+		and cn.concept_name_type = 'FULLY_SPECIFIED'
+	where
+		o.concept_id in
+(
+		select
+			concept_id
+		from
+			concept_name
+		where
+			concept_id in (856,2834)
+				and voided = 0
+				and locale = 'en'
+				and concept_name_type = 'FULLY_SPECIFIED')
+		and o.voided = 0
+		and o.encounter_id is not null
+		and o.person_id is not null
+		and e.voided = 0
+		and e.encounter_type in (54, 25, 57, 13, 10,32)
+		and COALESCE(o.value_text, o.value_numeric) is not null
+        and o.value_drug in (select drug_id from arv_drug) -- 22,420
+	union all
+	select
+	   o.patient_id,
+		date(o.start_date) visit_date,
+		(
+		select
+			property_value site_id
+		from
+			global_property
+		where
+			property = 'current_health_center_id') site_id
+	from
+		orders o
+	 join obs ob on o.order_id = ob.order_id
+	 and ob.voided = 0 and ob.concept_id = 9737
+	 and ob.value_coded = 856
+	 and o.order_type_id in (3,4)
+	 and o.voided = 0
+     union all
+select
+	ob.person_id as patient_id,
+	date(ob.obs_datetime) as visit_date,
+		(
+		select
+			property_value site_id
+		from
+			global_property
+		where
+			property = 'current_health_center_id') site_id
+from
+	obs ob
+join concept_name cn on
+	ob.concept_id = cn.concept_id
+where
+	ob.concept_id = 856
+	and ob.order_id is not null
+	and coalesce(value_text, value_numeric) is not null
+union all
+select
+ob.person_id as patient_id,
+date(ob.obs_datetime) as visit_date,
+	(
+		select
+			property_value site_id
+		from
+			global_property
+		where
+			property = 'current_health_center_id') site_id
+from
+	obs ob
+join concept_name cn on ob.concept_id = cn.concept_id
+where
+	ob.concept_id = 856
+	and ob.order_id is null
+	and coalesce(value_text, value_numeric) is not null) x
 ),
 final_dispensations AS (
 select
