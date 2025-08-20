@@ -91,7 +91,7 @@ from
 		and e.voided = 0
 		and e.encounter_type in (54, 25, 57, 13, 10,32)
 		and COALESCE(o.value_text, o.value_numeric) is not null
-        and o.value_drug in (select drug_id from arv_drug) -- 22,420
+        and o.value_drug in (select drug_id from arv_drug) 
 	union all
 	select
 	   o.patient_id,
@@ -127,6 +127,7 @@ join concept_name cn on
 	ob.concept_id = cn.concept_id
 where
 	ob.concept_id = 856
+        and ob.voided=0 
 	and ob.order_id is not null
 	and coalesce(value_text, value_numeric) is not null
 union all
@@ -145,6 +146,7 @@ from
 join concept_name cn on ob.concept_id = cn.concept_id
 where
 	ob.concept_id = 856
+        and ob.voided=0 
 	and ob.order_id is null
 	and coalesce(value_text, value_numeric) is not null) x
 ),
