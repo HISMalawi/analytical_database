@@ -190,13 +190,6 @@ select
         max(if(o.concept_id = 2516, cast(o.value_datetime as date), null)),
         cast(date_antiretrovirals_started(p.person_id, min(ps.start_date)) as date)
     ) as art_start_date,
-	case
-		when max(if(o.concept_id = 2516, o.value_datetime, null)) is null
-		or patient_date_enrolled(p.person_id) is null then ''
-		else timestampdiff(month, 
-            date(max(if(o.concept_id = 2516, o.value_datetime, null))), 
-            date(patient_date_enrolled(p.person_id)))
-	end as months_on_art,
 	timestampdiff(year, pe.birthdate, min(ps.start_date)) as age_at_initiation,
 	timestampdiff(day, pe.birthdate, min(ps.start_date)) as age_in_days_at_initiation,
 	max(if(o.concept_id = 6981, o.value_text, null)) as art_number_at_previous_location,

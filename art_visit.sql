@@ -84,216 +84,345 @@ and cn.name in ('HIV viral load') and cn.concept_name_type='FULLY_SPECIFIED'
 where ob.voided=0 and o.voided=0 
 ) x
 ),
-medication_regimen AS (
-    SELECT
-        GROUP_CONCAT(drug.drug_id ORDER BY drug.drug_id ASC) AS drugs,
-        regimen_name.name AS regimen_name
-    FROM moh_regimen_combination combo
-    INNER JOIN moh_regimen_combination_drug drug
-        ON combo.regimen_combination_id = drug.regimen_combination_id
-    INNER JOIN moh_regimen_name regimen_name
-        ON combo.regimen_name_id = regimen_name.regimen_name_id
-    GROUP BY combo.regimen_combination_id
-),
 final_dispensations AS (
-with drug_qty AS (
-    SELECT
-        o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        d.drug_inventory_id,
-        GREATEST(SUM(d.quantity), 0) AS total_quantity
-    FROM orders o
-    JOIN drug_order d ON o.order_id = d.order_id
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND d.drug_inventory_id IN (SELECT drug_id FROM arv_drug)
-    GROUP BY o.patient_id, DATE(o.start_date), d.drug_inventory_id
+select
+	x.*
+from
+	(
+with medication_regimen as (
+	select
+		GROUP_CONCAT(drug.drug_id order by drug.drug_id asc) as drugs,
+		regimen_name.name as regimen_name,
+		combo.regimen_combination_id
+	from
+		moh_regimen_combination combo
+	inner join moh_regimen_combination_drug drug on
+		combo.regimen_combination_id = drug.regimen_combination_id
+	inner join moh_regimen_name regimen_name on
+		combo.regimen_name_id = regimen_name.regimen_name_id
+	group by
+		combo.regimen_combination_id,
+		regimen_name.name
 ),
-home_qty AS (
-    SELECT
-        o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        doo.drug_inventory_id,
-        GREATEST(SUM(COALESCE(obbb.value_numeric, obbb.value_text, 0)), 0) AS total_home
-    FROM orders o
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    LEFT JOIN obs obbb ON obbb.person_id = o.patient_id
-        AND obbb.concept_id = 6781
-        AND obbb.voided = 0
-        AND DATE(o.start_date) = DATE(obbb.obs_datetime)
-        AND obbb.order_id = o.order_id
-    LEFT JOIN drug_order doo ON obbb.order_id = doo.order_id
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND (doo.drug_inventory_id IN (SELECT drug_id FROM arv_drug) OR doo.drug_inventory_id IS NULL)
-    GROUP BY o.patient_id, DATE(o.start_date), doo.drug_inventory_id
+	drug_qty as (
+	select
+		o.patient_id,
+		DATE(o.start_date) as visit_date,
+		d.drug_inventory_id,
+		dd.name as drug_name,
+		greatest(SUM(d.quantity), 0) as total_quantity
+	from
+		orders o
+	join drug_order d on
+		o.order_id = d.order_id
+	join encounter e on
+		o.encounter_id = e.encounter_id
+	join drug dd on d.drug_inventory_id = dd.drug_id
+	where
+		e.encounter_type in (54, 25)
+			and e.voided = 0
+			and o.voided = 0
+			and d.drug_inventory_id in (
+			select
+				drug_id
+			from
+				arv_drug)
+		group by
+			o.patient_id,
+			DATE(o.start_date),
+			d.drug_inventory_id
 ),
-clinic_qty AS (
-    SELECT
-        o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        do.drug_inventory_id,
-        GREATEST(SUM(COALESCE(obb.value_numeric, obb.value_text, 0)), 0) AS total_clinic
-    FROM orders o
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    LEFT JOIN obs obb ON obb.person_id = o.patient_id
-        AND obb.concept_id = 2540
-        AND obb.voided = 0
-        AND DATE(o.start_date) = DATE(obb.obs_datetime)
-        AND obb.order_id = o.order_id
-    LEFT JOIN drug_order do ON obb.order_id = do.order_id
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND (do.drug_inventory_id IN (SELECT drug_id FROM arv_drug) OR do.drug_inventory_id IS NULL)
-    GROUP BY o.patient_id, DATE(o.start_date), do.drug_inventory_id
+	home_qty as (select
+	o.person_id as patient_id,
+	date(o.obs_datetime) as visit_date,
+	do.drug_inventory_id,
+	d.name as drug_name,
+    greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_home
+from
+	drug_order do
+join obs o on
+	do.order_id = o.order_id
+join orders o2 on
+	o2.order_id = do.order_id
+join drug d on d.drug_id = do.drug_inventory_id
+where
+	o2.voided = 0
+	and o.voided = 0
+	and o.concept_id = 6781
+	and do.drug_inventory_id in (select drug_id from arv_drug ad)
+	and d.retired = 0
+group by
+	o.person_id,
+	date(o.obs_datetime),
+	do.drug_inventory_id
 ),
-patient_visit_drugs AS (
-    SELECT DISTINCT
-        o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        d.drug_inventory_id
-    FROM orders o
-    JOIN drug_order d ON o.order_id = d.order_id
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    JOIN obs ob ON ob.order_id = o.order_id AND DATE(o.start_date) = DATE(ob.obs_datetime)
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND d.drug_inventory_id IN (SELECT drug_id FROM arv_drug)
-    AND COALESCE(ob.value_numeric, ob.value_text, 0) > 0
+	clinic_qty as (select
+	o.person_id as patient_id,
+	date(o.obs_datetime) as visit_date,
+	do.drug_inventory_id,
+	d.name as drug_name,
+    greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
+from
+	drug_order do
+join obs o on
+	do.order_id = o.order_id
+join orders o2 on
+	o2.order_id = do.order_id
+join drug d on d.drug_id = do.drug_inventory_id
+where
+	o2.voided = 0
+	and o.voided = 0
+	and o.concept_id = 2540
+	and do.drug_inventory_id in (select drug_id from arv_drug ad)
+	and d.retired = 0
+group by
+	o.person_id,
+	date(o.obs_datetime),
+	do.drug_inventory_id
 ),
-drug_combinations AS (
-    SELECT
-        pvd.patient_id,
-        pvd.visit_date,
-        GROUP_CONCAT(DISTINCT pvd.drug_inventory_id ORDER BY pvd.drug_inventory_id ASC) AS drug_comb
-    FROM patient_visit_drugs pvd
-    GROUP BY pvd.patient_id, pvd.visit_date
+	patient_visit_drugs as (
+	select
+		distinct
+        o.patient_id,
+		DATE(o.start_date) as visit_date,
+		dd.name as drug_name,
+		d.drug_inventory_id
+	from
+		orders o
+	join drug_order d on
+		o.order_id = d.order_id
+	join encounter e on
+		o.encounter_id = e.encounter_id
+    join drug dd on d.drug_inventory_id = dd.drug_id
+	join obs ob on
+		ob.order_id = o.order_id
+		and DATE(o.start_date) = DATE(ob.obs_datetime)
+	where
+		e.encounter_type in (54, 25)
+			and e.voided = 0
+			and o.voided = 0
+			and dd.retired = 0
+			and d.drug_inventory_id in (
+			select
+				drug_id
+			from
+				arv_drug)
+			and coalesce(ob.value_numeric, ob.value_text, 0) > 0
+),
+	drug_combinations as (
+	select
+		pvd.patient_id,
+		pvd.visit_date,
+		GROUP_CONCAT(distinct pvd.drug_inventory_id order by pvd.drug_inventory_id asc) as drug_comb
+	from
+		patient_visit_drugs pvd
+	group by
+		pvd.patient_id,
+		pvd.visit_date
 )
-SELECT
-    pvd.patient_id,
-    pvd.visit_date,
-    dc.drug_comb,
-    GROUP_CONCAT(DISTINCT CONCAT(pvd.drug_inventory_id, ':', DATE(o.auto_expire_date))) AS auto_expire_date,
-    GROUP_CONCAT(DISTINCT CONCAT(pvd.drug_inventory_id, ':', o.instructions) SEPARATOR '|') AS instructions,
-    GROUP_CONCAT(DISTINCT CONCAT(pvd.drug_inventory_id, ':', IF(do.equivalent_daily_dose = 0, 1, do.equivalent_daily_dose))) AS equivalent_daily_dose,
-    GROUP_CONCAT(DISTINCT CONCAT(q.drug_inventory_id, ':', q.total_quantity)) AS quantity,
-    GROUP_CONCAT(DISTINCT CONCAT(hq.drug_inventory_id, ':', hq.total_home)) AS art_pills_remaining_at_home,
-    GROUP_CONCAT(DISTINCT CONCAT(cq.drug_inventory_id, ':', cq.total_clinic)) AS art_pills_remaining_brought_to_clinic,
-    COALESCE(mr.regimen_name, 'Unknown') AS art_regimen,
-    1 AS dispensed
-FROM patient_visit_drugs pvd
-JOIN orders o ON o.patient_id = pvd.patient_id AND DATE(o.start_date) = pvd.visit_date
-JOIN drug_order do ON o.order_id = do.order_id AND do.drug_inventory_id = pvd.drug_inventory_id
-JOIN drug_combinations dc ON dc.patient_id = pvd.patient_id AND dc.visit_date = pvd.visit_date
-LEFT JOIN medication_regimen mr ON mr.drugs = dc.drug_comb
-LEFT JOIN drug_qty q ON q.patient_id = pvd.patient_id AND q.visit_date = pvd.visit_date AND q.drug_inventory_id = pvd.drug_inventory_id
-LEFT JOIN home_qty hq ON hq.patient_id = pvd.patient_id AND hq.visit_date = pvd.visit_date AND hq.drug_inventory_id = pvd.drug_inventory_id
-LEFT JOIN clinic_qty cq ON cq.patient_id = pvd.patient_id AND cq.visit_date = pvd.visit_date AND cq.drug_inventory_id = pvd.drug_inventory_id
-GROUP BY pvd.patient_id, pvd.visit_date, dc.drug_comb, mr.regimen_name
-  ),
+	select
+		pvd.patient_id,
+		pvd.visit_date,
+		dc.drug_comb,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', DATE(o.auto_expire_date))) as auto_expire_date,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', o.instructions) SEPARATOR '|') as instructions,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', do.equivalent_daily_dose)) as equivalent_daily_dose,
+		GROUP_CONCAT(distinct CONCAT(q.drug_name, ':', q.total_quantity)) as quantity,
+		GROUP_CONCAT(distinct CONCAT(hq.drug_name, ':', hq.total_home)) as art_pills_remaining_at_home,
+		GROUP_CONCAT(distinct CONCAT(cq.drug_name, ':', cq.total_clinic)) as art_pills_remaining_brought_to_clinic,
+		coalesce(mr.regimen_name, 'Unknown') as art_regimen,
+		1 as dispensed
+	from
+		patient_visit_drugs pvd
+	join orders o on
+		o.patient_id = pvd.patient_id
+		and DATE(o.start_date) = pvd.visit_date
+	join drug_order do on
+		o.order_id = do.order_id
+		and do.drug_inventory_id = pvd.drug_inventory_id
+	join drug_combinations dc on
+		dc.patient_id = pvd.patient_id
+		and dc.visit_date = pvd.visit_date
+	left join medication_regimen mr on
+		mr.drugs = dc.drug_comb
+	left join drug_qty q on
+		q.patient_id = pvd.patient_id
+		and q.visit_date = pvd.visit_date
+		and q.drug_inventory_id = pvd.drug_inventory_id
+	left join home_qty hq on
+		hq.patient_id = pvd.patient_id
+		and hq.visit_date = pvd.visit_date
+		and hq.drug_inventory_id = pvd.drug_inventory_id
+	left join clinic_qty cq on
+		cq.patient_id = pvd.patient_id
+		and cq.visit_date = pvd.visit_date
+		and cq.drug_inventory_id = pvd.drug_inventory_id
+	group by
+		pvd.patient_id,
+		pvd.visit_date,
+		dc.drug_comb,
+		mr.regimen_name
+) x ),
 final_non_art_dispensations AS (
-with drug_qty AS (
-    SELECT
-        o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        d.drug_inventory_id,
-        GREATEST(SUM(d.quantity), 0) AS total_quantity
-    FROM orders o
-    JOIN drug_order d ON o.order_id = d.order_id
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND d.drug_inventory_id not IN (SELECT drug_id FROM arv_drug)
-    GROUP BY o.patient_id, DATE(o.start_date), d.drug_inventory_id
+select
+	x.*
+from
+	(
+with drug_qty as (
+	select
+		o.patient_id,
+		DATE(o.start_date) as visit_date,
+		d.drug_inventory_id,
+		dd.name as drug_name,
+		greatest(SUM(d.quantity), 0) as total_quantity
+	from
+		orders o
+	join drug_order d on
+		o.order_id = d.order_id
+	join encounter e on
+		o.encounter_id = e.encounter_id
+	join drug dd on d.drug_inventory_id = dd.drug_id
+	where
+		e.encounter_type in (54, 25)
+			and e.voided = 0
+			and o.voided = 0
+			and d.drug_inventory_id not in (
+			select
+				drug_id
+			from
+				arv_drug)
+		group by
+			o.patient_id,
+			DATE(o.start_date),
+			d.drug_inventory_id
 ),
-home_qty AS (
-    SELECT
-        o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        doo.drug_inventory_id,
-        GREATEST(SUM(COALESCE(obbb.value_numeric, obbb.value_text, 0)), 0) AS total_home
-    FROM orders o
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    LEFT JOIN obs obbb ON obbb.person_id = o.patient_id
-        AND obbb.concept_id = 6781
-        AND obbb.voided = 0
-        AND DATE(o.start_date) = DATE(obbb.obs_datetime)
-        AND obbb.order_id = o.order_id
-    LEFT JOIN drug_order doo ON obbb.order_id = doo.order_id
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND (doo.drug_inventory_id not IN (SELECT drug_id FROM arv_drug) OR doo.drug_inventory_id IS NULL)
-    GROUP BY o.patient_id, DATE(o.start_date), doo.drug_inventory_id
+	home_qty as (select
+	o.person_id as patient_id,
+	date(o.obs_datetime) as visit_date,
+	do.drug_inventory_id,
+	d.name as drug_name,
+    greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_home
+from
+	drug_order do
+join obs o on
+	do.order_id = o.order_id
+join orders o2 on
+	o2.order_id = do.order_id
+join drug d on d.drug_id = do.drug_inventory_id
+where
+	o2.voided = 0
+	and o.voided = 0
+	and o.concept_id = 6781
+	and do.drug_inventory_id not in (select drug_id from arv_drug ad)
+	and d.retired = 0
+group by
+	o.person_id,
+	date(o.obs_datetime),
+	do.drug_inventory_id
 ),
-clinic_qty AS (
-    SELECT
-        o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        do.drug_inventory_id,
-        GREATEST(SUM(COALESCE(obb.value_numeric, obb.value_text, 0)), 0) AS total_clinic
-    FROM orders o
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    LEFT JOIN obs obb ON obb.person_id = o.patient_id
-        AND obb.concept_id = 2540
-        AND obb.voided = 0
-        AND DATE(o.start_date) = DATE(obb.obs_datetime)
-        AND obb.order_id = o.order_id
-    LEFT JOIN drug_order do ON obb.order_id = do.order_id
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND (do.drug_inventory_id not IN (SELECT drug_id FROM arv_drug) OR do.drug_inventory_id IS NULL)
-    GROUP BY o.patient_id, DATE(o.start_date), do.drug_inventory_id
+	clinic_qty as (select
+	o.person_id as patient_id,
+	date(o.obs_datetime) as visit_date,
+	do.drug_inventory_id,
+	d.name as drug_name,
+    greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
+from
+	drug_order do
+join obs o on
+	do.order_id = o.order_id
+join orders o2 on
+	o2.order_id = do.order_id
+join drug d on d.drug_id = do.drug_inventory_id
+where
+	o2.voided = 0
+	and o.voided = 0
+	and o.concept_id = 2540
+	and do.drug_inventory_id not in (select drug_id from arv_drug ad)
+	and d.retired = 0
+group by
+	o.person_id,
+	date(o.obs_datetime),
+	do.drug_inventory_id
 ),
-patient_visit_drugs AS (
-    SELECT DISTINCT
+	patient_visit_drugs as (
+	select
+		distinct
         o.patient_id,
-        DATE(o.start_date) AS visit_date,
-        d.drug_inventory_id
-    FROM orders o
-    JOIN drug_order d ON o.order_id = d.order_id
-    JOIN encounter e ON o.encounter_id = e.encounter_id
-    JOIN obs ob ON ob.order_id = o.order_id AND DATE(o.start_date) = DATE(ob.obs_datetime)
-    WHERE e.encounter_type IN (54, 25)
-    AND e.voided = 0
-    AND o.voided = 0
-    AND d.drug_inventory_id not IN (SELECT drug_id FROM arv_drug)
-    AND COALESCE(ob.value_numeric, ob.value_text, 0) > 0
+		DATE(o.start_date) as visit_date,
+		dd.name as drug_name,
+		d.drug_inventory_id
+	from
+		orders o
+	join drug_order d on
+		o.order_id = d.order_id
+	join encounter e on
+		o.encounter_id = e.encounter_id
+    join drug dd on d.drug_inventory_id = dd.drug_id
+	join obs ob on
+		ob.order_id = o.order_id
+		and DATE(o.start_date) = DATE(ob.obs_datetime)
+	where
+		e.encounter_type in (54, 25)
+			and e.voided = 0
+			and o.voided = 0
+			and dd.retired = 0
+			and d.drug_inventory_id not in (
+			select
+				drug_id
+			from
+				arv_drug)
+			and coalesce(ob.value_numeric, ob.value_text, 0) > 0
 ),
-drug_combinations AS (
-    SELECT
-        pvd.patient_id,
-        pvd.visit_date,
-        GROUP_CONCAT(DISTINCT pvd.drug_inventory_id ORDER BY pvd.drug_inventory_id ASC) AS drug_comb
-    FROM patient_visit_drugs pvd
-    GROUP BY pvd.patient_id, pvd.visit_date
+	drug_combinations as (
+	select
+		pvd.patient_id,
+		pvd.visit_date,
+		GROUP_CONCAT(distinct pvd.drug_inventory_id order by pvd.drug_inventory_id asc) as drug_comb
+	from
+		patient_visit_drugs pvd
+	group by
+		pvd.patient_id,
+		pvd.visit_date
 )
-SELECT
-    pvd.patient_id,
-    pvd.visit_date,
-    dc.drug_comb,
-    GROUP_CONCAT(DISTINCT CONCAT(pvd.drug_inventory_id, ':', DATE(o.auto_expire_date))) AS auto_expire_date,
-    GROUP_CONCAT(DISTINCT CONCAT(pvd.drug_inventory_id, ':', o.instructions) SEPARATOR '|') AS instructions,
-    GROUP_CONCAT(DISTINCT CONCAT(pvd.drug_inventory_id, ':', IF(do.equivalent_daily_dose = 0, 1, do.equivalent_daily_dose))) AS equivalent_daily_dose,
-    GROUP_CONCAT(DISTINCT CONCAT(q.drug_inventory_id, ':', q.total_quantity)) AS quantity,
-    GROUP_CONCAT(DISTINCT CONCAT(hq.drug_inventory_id, ':', hq.total_home)) AS other_pills_remaining_at_home,
-    GROUP_CONCAT(DISTINCT CONCAT(cq.drug_inventory_id, ':', cq.total_clinic)) AS other_pills_remaining_brought_to_clinic,
-    1 AS dispensed
-FROM patient_visit_drugs pvd
-JOIN orders o ON o.patient_id = pvd.patient_id AND DATE(o.start_date) = pvd.visit_date
-JOIN drug_order do ON o.order_id = do.order_id AND do.drug_inventory_id = pvd.drug_inventory_id
-JOIN drug_combinations dc ON dc.patient_id = pvd.patient_id AND dc.visit_date = pvd.visit_date
-LEFT JOIN drug_qty q ON q.patient_id = pvd.patient_id AND q.visit_date = pvd.visit_date AND q.drug_inventory_id = pvd.drug_inventory_id
-LEFT JOIN home_qty hq ON hq.patient_id = pvd.patient_id AND hq.visit_date = pvd.visit_date AND hq.drug_inventory_id = pvd.drug_inventory_id
-LEFT JOIN clinic_qty cq ON cq.patient_id = pvd.patient_id AND cq.visit_date = pvd.visit_date AND cq.drug_inventory_id = pvd.drug_inventory_id
-GROUP BY pvd.patient_id, pvd.visit_date, dc.drug_comb
+	select
+		pvd.patient_id,
+		pvd.visit_date,
+		dc.drug_comb,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', DATE(o.auto_expire_date))) as auto_expire_date,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', o.instructions) SEPARATOR '|') as instructions,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', do.equivalent_daily_dose)) as equivalent_daily_dose,
+		GROUP_CONCAT(distinct CONCAT(q.drug_name, ':', q.total_quantity)) as quantity,
+		GROUP_CONCAT(distinct CONCAT(hq.drug_name, ':', hq.total_home)) as other_pills_remaining_at_home,
+		GROUP_CONCAT(distinct CONCAT(cq.drug_name, ':', cq.total_clinic)) as other_pills_remaining_brought_to_clinic,
+		1 as dispensed
+	from
+		patient_visit_drugs pvd
+	join orders o on
+		o.patient_id = pvd.patient_id
+		and DATE(o.start_date) = pvd.visit_date
+	join drug_order do on
+		o.order_id = do.order_id
+		and do.drug_inventory_id = pvd.drug_inventory_id
+	join drug_combinations dc on
+		dc.patient_id = pvd.patient_id
+		and dc.visit_date = pvd.visit_date
+	left join drug_qty q on
+		q.patient_id = pvd.patient_id
+		and q.visit_date = pvd.visit_date
+		and q.drug_inventory_id = pvd.drug_inventory_id
+	left join home_qty hq on
+		hq.patient_id = pvd.patient_id
+		and hq.visit_date = pvd.visit_date
+		and hq.drug_inventory_id = pvd.drug_inventory_id
+	left join clinic_qty cq on
+		cq.patient_id = pvd.patient_id
+		and cq.visit_date = pvd.visit_date
+		and cq.drug_inventory_id = pvd.drug_inventory_id
+	group by
+		pvd.patient_id,
+		pvd.visit_date,
+		dc.drug_comb
+) x
 ),
 visit_appointments as 
 (
@@ -471,195 +600,20 @@ max(case when od.`attribute`='date_started_treatment' then od.value_datetime els
 max(case when od.`attribute`='routine_tb_screening' then coalesce(od.value_coded_value,od.value_text) else NULL end) as routine_tb_screening,
 max(case when od.`attribute`='cd4_count' then coalesce(od.value_coded_value,od.value_text) else NULL end) as cd4_count,
 NULL allergic_to_cotrimaxole,
- case when fd.dispensed=1 then  
- (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fd.quantity, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN arv_drug ad ON ad.drug_id = jt2.drug_id
-        JOIN drug d2 ON ad.drug_id = d2.drug_id
-    ) 
-    else NULL end  art_treatment_dispensed,
- (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fd.equivalent_daily_dose, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN arv_drug ad ON ad.drug_id = jt2.drug_id
-        JOIN drug d2 ON ad.drug_id = d2.drug_id
-    ) AS dosage_on_art_treatment,
- (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fd.auto_expire_date, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN arv_drug ad ON ad.drug_id = jt2.drug_id
-        JOIN drug d2 ON ad.drug_id = d2.drug_id
-    ) AS art_treatment_auto_expire_date,
-     (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fd.instructions, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ' || '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS art_treatment_instructions_given,
- fd.art_regimen regimen_category,
- case when fnd.dispensed=1 then  
- (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fnd.quantity, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fnd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) 
-    else NULL end  other_drugs_dispensed,
-     (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fnd.equivalent_daily_dose, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fnd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS dosage_on_non_art_treatment,
- (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fnd.auto_expire_date, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fnd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS other_drugs_auto_expire_date,
-    (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fnd.instructions, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ' || '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fnd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS other_drugs_instructions_given,
+fd.quantity as art_treatment_dispensed,
+fd.equivalent_daily_dose as dosage_on_art_treatment,
+fd.auto_expire_date as art_treatment_auto_expire_date,
+fd.instructions as art_treatment_instructions_given,
+fd.art_regimen regimen_category,
+fnd.quantity as other_drugs_dispensed,
+fnd.equivalent_daily_dose as dosage_on_non_art_treatment,
+fnd.auto_expire_date as other_drugs_auto_expire_date,
+fnd.instructions as other_drugs_instructions_given,
 va.appointment_date next_appointment_date,
-(
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fd.art_pills_remaining_brought_to_clinic, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS art_pills_remaining_brought_to_clinic,
-  (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fd.art_pills_remaining_at_home, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS art_pills_remaining_at_home,
-(
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fnd.other_pills_remaining_brought_to_clinic, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fnd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS other_pills_remaining_brought_to_clinic,
-  (
-        SELECT GROUP_CONCAT(
-            CONCAT(d2.name, ':', 
-                SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(fnd.other_pills_remaining_at_home, CONCAT(d2.drug_id, ':'), -1
-                ), ',', 1)
-            ) 
-            ORDER BY d2.drug_id SEPARATOR ', '
-        )
-        FROM JSON_TABLE(
-            CONCAT('[', fnd.drug_comb, ']'),
-            '$[*]' COLUMNS (drug_id INT PATH '$')
-        ) AS jt2
-        JOIN drug d2 ON d2.drug_id = jt2.drug_id
-    ) AS other_pills_remaining_at_home,
+fd.art_pills_remaining_brought_to_clinic,
+fd.art_pills_remaining_at_home,
+fnd.other_pills_remaining_brought_to_clinic,
+fnd.other_pills_remaining_at_home,
 max(case when od.`attribute`='doses_missed' then od.value_numeric else NULL end) as doses_missed,
 group_concat( distinct aa.art_adherence)   art_adherence,
 max(case when od.`attribute`='reason_for_poor_adherence' then coalesce(od.value_coded_value,od.value_text) else NULL end) as reason_for_poor_adherence,
