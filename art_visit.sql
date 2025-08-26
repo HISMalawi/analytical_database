@@ -312,7 +312,7 @@ with medication_regimen as (
 		DATE(o.start_date) as visit_date,
 		d.drug_inventory_id,
 		dd.name as drug_name,
-		greatest(SUM(d.quantity), 0) as total_quantity
+		greatest(SUM(coalesce(d.quantity,ob.value_numeric)), 0) as total_quantity
 	from
 		orders o
 	join drug_order d on
@@ -321,10 +321,12 @@ with medication_regimen as (
 		o.encounter_id = e.encounter_id
 	join drug dd on
 		d.drug_inventory_id = dd.drug_id
+        join obs ob on o.order_id = ob.order_id
 	where
 		e.encounter_type in (54, 25)
 			and e.voided = 0
 			and o.voided = 0
+                        and ob.voided = 0
 			and d.drug_inventory_id in (
 			select
 				drug_id
@@ -490,7 +492,7 @@ with drug_qty as (
 		DATE(o.start_date) as visit_date,
 		d.drug_inventory_id,
 		dd.name as drug_name,
-		greatest(SUM(d.quantity), 0) as total_quantity
+		greatest(SUM(coalesce(d.quantity,ob.value_numeric)), 0) as total_quantity
 	from
 		orders o
 	join drug_order d on
@@ -499,10 +501,12 @@ with drug_qty as (
 		o.encounter_id = e.encounter_id
 	join drug dd on
 		d.drug_inventory_id = dd.drug_id
+        join obs ob on o.order_id = ob.order_id
 	where
 		e.encounter_type in (54, 25)
 			and e.voided = 0
 			and o.voided = 0
+                        and ob.voided = 0
 			and d.drug_inventory_id not in (
 			select
 				drug_id
