@@ -476,12 +476,12 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 		pvd.patient_id,
 		pvd.visit_date,
 		dc.drug_comb,
-		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', DATE(o.auto_expire_date))) as auto_expire_date,
-		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', o.instructions) SEPARATOR '|') as instructions,
-		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', do.equivalent_daily_dose)) as equivalent_daily_dose,
-		GROUP_CONCAT(distinct CONCAT(q.drug_name, ':', q.total_quantity)) as quantity,
-		GROUP_CONCAT(distinct CONCAT(hq.drug_name, ':', hq.total_home)) as art_pills_remaining_at_home,
-		GROUP_CONCAT(distinct CONCAT(cq.drug_name, ':', cq.total_clinic)) as art_pills_remaining_brought_to_clinic,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', DATE(o.auto_expire_date)) SEPARATOR '||') as auto_expire_date,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', o.instructions) SEPARATOR '||') as instructions,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', do.equivalent_daily_dose) SEPARATOR '||') as equivalent_daily_dose,
+		GROUP_CONCAT(distinct CONCAT(q.drug_name, ':', q.total_quantity) SEPARATOR '||') as quantity,
+		GROUP_CONCAT(distinct CONCAT(hq.drug_name, ':', hq.total_home) SEPARATOR '||') as art_pills_remaining_at_home,
+		GROUP_CONCAT(distinct CONCAT(cq.drug_name, ':', cq.total_clinic) SEPARATOR '||') as art_pills_remaining_brought_to_clinic,
 		coalesce(mr.regimen_name, 'Unknown') as art_regimen,
 		1 as dispensed
 	from
@@ -690,12 +690,12 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 		pvd.patient_id,
 		pvd.visit_date,
 		dc.drug_comb,
-		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', DATE(o.auto_expire_date))) as auto_expire_date,
-		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', o.instructions) SEPARATOR '|') as instructions,
-		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', do.equivalent_daily_dose)) as equivalent_daily_dose,
-		GROUP_CONCAT(distinct CONCAT(q.drug_name, ':', q.total_quantity)) as quantity,
-		GROUP_CONCAT(distinct CONCAT(hq.drug_name, ':', hq.total_home)) as other_pills_remaining_at_home,
-		GROUP_CONCAT(distinct CONCAT(cq.drug_name, ':', cq.total_clinic)) as other_pills_remaining_brought_to_clinic,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', DATE(o.auto_expire_date)) SEPARATOR '||') as auto_expire_date,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', o.instructions) SEPARATOR '||') as instructions,
+		GROUP_CONCAT(distinct CONCAT(pvd.drug_name, ':', do.equivalent_daily_dose) SEPARATOR '||') as equivalent_daily_dose,
+		GROUP_CONCAT(distinct CONCAT(q.drug_name, ':', q.total_quantity) SEPARATOR '||') as quantity,
+		GROUP_CONCAT(distinct CONCAT(hq.drug_name, ':', hq.total_home) SEPARATOR '||') as other_pills_remaining_at_home,
+		GROUP_CONCAT(distinct CONCAT(cq.drug_name, ':', cq.total_clinic) SEPARATOR '||') as other_pills_remaining_brought_to_clinic,
 		1 as dispensed
 	from
 		patient_visit_drugs pvd
@@ -1013,14 +1013,14 @@ fp.patient_id,
 		fnd.other_pills_remaining_brought_to_clinic,
 		fnd.other_pills_remaining_at_home,
 		max(case when od.`attribute` = 'doses_missed' then od.value_numeric else NULL end) as doses_missed,
-		group_concat( distinct aa.art_adherence) art_adherence,
+		group_concat( distinct aa.art_adherence SEPARATOR '||') art_adherence,
 		max(case when od.`attribute` = 'reason_for_poor_adherence' then coalesce(od.value_coded_value, od.value_text) else NULL end) as reason_for_poor_adherence,
 		ltd.lab_order_test_date,
-		group_concat( distinct case when ltd.lab_test_type is not null and ltd.lab_test_type != '' then ltd.lab_test_type else null end ) lab_test_type,
-		group_concat(distinct ltd.lab_reason_for_test) lab_reason_for_test,
-		TRIM(LEADING ',' FROM GROUP_CONCAT(DISTINCT CASE WHEN ltd.lab_result_date IS NOT NULL THEN ltd.lab_result_date ELSE NULL END)) AS lab_result_date,
-		group_concat( distinct concat(ltd.lab_result_date, ':', ltd.lab_result)) lab_result,
-		group_concat( distinct case when ltd.sample_type is not null and ltd.sample_type != '' then ltd.sample_type else null end ) sample_type
+		group_concat( distinct case when ltd.lab_test_type is not null and ltd.lab_test_type != '' then ltd.lab_test_type else null end  SEPARATOR '||') lab_test_type,
+		group_concat(distinct ltd.lab_reason_for_test SEPARATOR '||') lab_reason_for_test,
+		TRIM(LEADING ',' FROM GROUP_CONCAT(DISTINCT CASE WHEN ltd.lab_result_date IS NOT NULL THEN ltd.lab_result_date ELSE NULL END SEPARATOR '||')) AS lab_result_date,
+		group_concat( distinct concat(ltd.lab_result_date, ':', ltd.lab_result) SEPARATOR '||') lab_result,
+		group_concat( distinct case when ltd.sample_type is not null and ltd.sample_type != '' then ltd.sample_type else null end SEPARATOR '||') sample_type
 from
 		final_pull fp
 left join
@@ -1050,3 +1050,4 @@ left join lab_tests_data ltd ON
 group by
 		fp.patient_id,
 		fp.visit_date;
+
