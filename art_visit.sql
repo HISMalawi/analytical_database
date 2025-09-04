@@ -267,8 +267,8 @@ from
 					and coalesce(value_text, value_numeric) is not null
 			union all
 				select
-					ob.person_id as patient_id,
-					date(ob.obs_datetime) as visit_date,
+					o.patient_id,
+					date(o.start_date) visit_date,
 					(
 					select
 						property_value site_id
@@ -277,14 +277,30 @@ from
 					where
 						property = 'current_health_center_id') site_id
 				from
-					obs ob
-				join concept_name cn on
-					ob.concept_id = cn.concept_id
+					orders o
 				where
-					ob.concept_id = 856
-					and ob.voided = 0
-					and ob.order_id is null
-					and coalesce(value_text, value_numeric) is not null) x
+					o.order_type_id in (1, 2)
+						and o.voided = 0
+				union all
+					select
+						ob.person_id as patient_id,
+						date(ob.obs_datetime) as visit_date,
+						(
+						select
+							property_value site_id
+						from
+							global_property
+						where
+							property = 'current_health_center_id') site_id
+					from
+						obs ob
+					join concept_name cn on
+						ob.concept_id = cn.concept_id
+					where
+						ob.concept_id = 856
+						and ob.voided = 0
+						and ob.order_id is null
+						and coalesce(value_text, value_numeric) is not null) x
 ),
 final_dispensations AS (
 select
@@ -312,7 +328,7 @@ with medication_regimen as (
 		DATE(o.start_date) as visit_date,
 		d.drug_inventory_id,
 		dd.name as drug_name,
-		greatest(SUM(coalesce(d.quantity,ob.value_numeric)), 0) as total_quantity
+		greatest(SUM(d.quantity), 0) as total_quantity
 	from
 		orders o
 	join drug_order d on
@@ -321,12 +337,10 @@ with medication_regimen as (
 		o.encounter_id = e.encounter_id
 	join drug dd on
 		d.drug_inventory_id = dd.drug_id
-        join obs ob on o.order_id = ob.order_id
 	where
 		e.encounter_type in (54, 25)
 			and e.voided = 0
 			and o.voided = 0
-                        and ob.voided = 0
 			and d.drug_inventory_id in (
 			select
 				drug_id
@@ -366,23 +380,31 @@ with medication_regimen as (
 		o.person_id,
 		date(o.obs_datetime),
 		do.drug_inventory_id
-	union all
-select
-	o.person_id as patient_id,
-	date(o.obs_datetime) as visit_date,
-	o.value_drug,
-	d.name as drug_name,
-	greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
-from
-	obs o
-join drug d on
-	o.value_drug = d.drug_id
-where o.concept_id = 6781
-	and d.drug_id in (select drug_id from arv_drug)
-	and d.retired = 0
-	and o.voided = 0
-	and o.order_id is null
-group by o.person_id, date(o.obs_datetime), o.value_drug
+union all
+	select
+		o.person_id as patient_id,
+		date(o.obs_datetime) as visit_date,
+		o.value_drug,
+		d.name as drug_name,
+		greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
+	from
+		obs o
+	join drug d on
+		o.value_drug = d.drug_id
+	where
+		o.concept_id = 6781
+		and d.drug_id in (
+		select
+			drug_id
+		from
+			arv_drug)
+		and d.retired = 0
+		and o.voided = 0
+		and o.order_id is null
+	group by
+		o.person_id,
+		date(o.obs_datetime),
+		o.value_drug
 ),
 	clinic_qty as (
 	select
@@ -413,23 +435,31 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 		o.person_id,
 		date(o.obs_datetime),
 		do.drug_inventory_id
-union all	
-select
-	o.person_id as patient_id,
-	date(o.obs_datetime) as visit_date,
-	o.value_drug,
-	d.name as drug_name,
-	greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
-from
-	obs o
-join drug d on
-	o.value_drug = d.drug_id
-where o.concept_id = 2540
-	and d.drug_id in (select drug_id from arv_drug)
-	and d.retired = 0
-	and o.voided = 0
-      and o.order_id is null
-group by o.person_id, date(o.obs_datetime), o.value_drug
+union all
+	select
+		o.person_id as patient_id,
+		date(o.obs_datetime) as visit_date,
+		o.value_drug,
+		d.name as drug_name,
+		greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
+	from
+		obs o
+	join drug d on
+		o.value_drug = d.drug_id
+	where
+		o.concept_id = 2540
+		and d.drug_id in (
+		select
+			drug_id
+		from
+			arv_drug)
+		and d.retired = 0
+		and o.voided = 0
+		and o.order_id is null
+	group by
+		o.person_id,
+		date(o.obs_datetime),
+		o.value_drug
 ),
 	patient_visit_drugs as (
 	select
@@ -446,9 +476,6 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 		o.encounter_id = e.encounter_id
 	join drug dd on
 		d.drug_inventory_id = dd.drug_id
-	join obs ob on
-		ob.order_id = o.order_id
-		and DATE(o.start_date) = DATE(ob.obs_datetime)
 	where
 		e.encounter_type in (54, 25)
 			and e.voided = 0
@@ -459,7 +486,7 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 				drug_id
 			from
 				arv_drug)
-			and coalesce(ob.value_numeric, ob.value_text, 0) > 0
+			and coalesce(d.quantity, 0) > 0
 ),
 	drug_combinations as (
 	select
@@ -526,7 +553,7 @@ with drug_qty as (
 		DATE(o.start_date) as visit_date,
 		d.drug_inventory_id,
 		dd.name as drug_name,
-		greatest(SUM(coalesce(d.quantity,ob.value_numeric)), 0) as total_quantity
+		greatest(SUM(d.quantity), 0) as total_quantity
 	from
 		orders o
 	join drug_order d on
@@ -535,12 +562,10 @@ with drug_qty as (
 		o.encounter_id = e.encounter_id
 	join drug dd on
 		d.drug_inventory_id = dd.drug_id
-        join obs ob on o.order_id = ob.order_id
 	where
 		e.encounter_type in (54, 25)
 			and e.voided = 0
 			and o.voided = 0
-                        and ob.voided = 0
 			and d.drug_inventory_id not in (
 			select
 				drug_id
@@ -580,23 +605,31 @@ with drug_qty as (
 		o.person_id,
 		date(o.obs_datetime),
 		do.drug_inventory_id
-	union all
-select
-	o.person_id as patient_id,
-	date(o.obs_datetime) as visit_date,
-	o.value_drug,
-	d.name as drug_name,
-	greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
-from
-	obs o
-join drug d on
-	o.value_drug = d.drug_id
-where o.concept_id = 6781
-	and d.drug_id not in (select drug_id from arv_drug)
-	and d.retired = 0
-	and o.voided = 0
-	and o.order_id is null
-group by o.person_id, date(o.obs_datetime), o.value_drug
+union all
+	select
+		o.person_id as patient_id,
+		date(o.obs_datetime) as visit_date,
+		o.value_drug,
+		d.name as drug_name,
+		greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
+	from
+		obs o
+	join drug d on
+		o.value_drug = d.drug_id
+	where
+		o.concept_id = 6781
+		and d.drug_id not in (
+		select
+			drug_id
+		from
+			arv_drug)
+		and d.retired = 0
+		and o.voided = 0
+		and o.order_id is null
+	group by
+		o.person_id,
+		date(o.obs_datetime),
+		o.value_drug
 ),
 	clinic_qty as (
 	select
@@ -627,23 +660,31 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 		o.person_id,
 		date(o.obs_datetime),
 		do.drug_inventory_id
-union all	
-select
-	o.person_id as patient_id,
-	date(o.obs_datetime) as visit_date,
-	o.value_drug,
-	d.name as drug_name,
-	greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
-from
-	obs o
-join drug d on
-	o.value_drug = d.drug_id
-where o.concept_id = 2540
-	and d.drug_id not in (select drug_id from arv_drug)
-	and d.retired = 0
-	and o.voided = 0
-	and o.order_id is null
-group by o.person_id, date(o.obs_datetime), o.value_drug
+union all
+	select
+		o.person_id as patient_id,
+		date(o.obs_datetime) as visit_date,
+		o.value_drug,
+		d.name as drug_name,
+		greatest(SUM(coalesce(o.value_numeric, o.value_text, 0)), 0) as total_clinic
+	from
+		obs o
+	join drug d on
+		o.value_drug = d.drug_id
+	where
+		o.concept_id = 2540
+		and d.drug_id not in (
+		select
+			drug_id
+		from
+			arv_drug)
+		and d.retired = 0
+		and o.voided = 0
+		and o.order_id is null
+	group by
+		o.person_id,
+		date(o.obs_datetime),
+		o.value_drug
 ),
 	patient_visit_drugs as (
 	select
@@ -660,9 +701,6 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 		o.encounter_id = e.encounter_id
 	join drug dd on
 		d.drug_inventory_id = dd.drug_id
-	join obs ob on
-		ob.order_id = o.order_id
-		and DATE(o.start_date) = DATE(ob.obs_datetime)
 	where
 		e.encounter_type in (54, 25)
 			and e.voided = 0
@@ -673,7 +711,7 @@ group by o.person_id, date(o.obs_datetime), o.value_drug
 				drug_id
 			from
 				arv_drug)
-			and coalesce(ob.value_numeric, ob.value_text, 0) > 0
+			and coalesce(d.quantity, 0) > 0
 ),
 	drug_combinations as (
 	select
@@ -1016,7 +1054,7 @@ fp.patient_id,
 		group_concat( distinct aa.art_adherence SEPARATOR '||') art_adherence,
 		max(case when od.`attribute` = 'reason_for_poor_adherence' then coalesce(od.value_coded_value, od.value_text) else NULL end) as reason_for_poor_adherence,
 		ltd.lab_order_test_date,
-		group_concat( distinct case when ltd.lab_test_type is not null and ltd.lab_test_type != '' then ltd.lab_test_type else null end  SEPARATOR '||') lab_test_type,
+		group_concat( distinct case when ltd.lab_test_type is not null and ltd.lab_test_type != '' then ltd.lab_test_type else null end SEPARATOR '||') lab_test_type,
 		group_concat(distinct ltd.lab_reason_for_test SEPARATOR '||') lab_reason_for_test,
 		TRIM(LEADING ',' FROM GROUP_CONCAT(DISTINCT CASE WHEN ltd.lab_result_date IS NOT NULL THEN ltd.lab_result_date ELSE NULL END SEPARATOR '||')) AS lab_result_date,
 		group_concat( distinct concat(ltd.lab_result_date, ':', ltd.lab_result) SEPARATOR '||') lab_result,
@@ -1050,4 +1088,3 @@ left join lab_tests_data ltd ON
 group by
 		fp.patient_id,
 		fp.visit_date;
-
