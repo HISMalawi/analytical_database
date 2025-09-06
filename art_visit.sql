@@ -1033,7 +1033,7 @@ fp.patient_id,
 		else null
 	end as date_started_treatment_known,
 		max(case when od.`attribute` = 'date_started_treatment' then date(od.value_datetime) else NULL end) as date_started_treatment,
-		max(case when od.`attribute` = 'routine_tb_screening' then coalesce(od.value_coded_value, od.value_text) else NULL end) as routine_tb_screening,
+		group_concat(distinct case when od.`attribute` = 'routine_tb_screening' then coalesce(od.value_coded_value, od.value_text) else NULL end SEPARATOR '||') as routine_tb_screening,
 		max(case when od.`attribute` = 'cd4_count' then coalesce(od.value_coded_value, od.value_text) else NULL end) as cd4_count,
 		max(case when od.`attribute` = 'allergic_to_cotrimaxole' then coalesce(od.value_coded_value, od.value_text) else NULL end) as allergic_to_cotrimaxole,
 		fd.quantity as art_treatment_dispensed,
