@@ -174,7 +174,7 @@ LEFT JOIN concept_name cn2 ON
 	AND cn2.concept_name_type = 'FULLY_SPECIFIED'
 	AND cn2.locale = 'en'
 	AND cn2.voided = 0
-),
+	where o.voided = 0),
 final_pull as 
 (
 select
@@ -202,8 +202,7 @@ from
 		and cn.voided = 0
 		and cn.locale = 'en'
 		and cn.concept_name_type = 'FULLY_SPECIFIED'
-	where
-		o.concept_id in
+	where o.concept_id in
 (
 		select
 			concept_id
@@ -244,7 +243,7 @@ from
 				and ob.concept_id = 9737
 				and ob.value_coded = 856
 				and o.order_type_id in (3, 4)
-					and o.voided = 0
+				and o.voided = 0
 			union all
 				select
 					ob.person_id as patient_id,
@@ -280,7 +279,7 @@ from
 					orders o
 				where
 					o.order_type_id in (1, 2)
-						and o.voided = 0
+					and o.voided = 0
 				union all
 					select
 						ob.person_id as patient_id,
@@ -300,6 +299,7 @@ from
 						ob.concept_id = 856
 						and ob.voided = 0
 						and ob.order_id is null
+						and cn.voided = 0
 						and coalesce(value_text, value_numeric) is not null) x
 ),
 final_dispensations AS (
@@ -536,6 +536,7 @@ union all
 			cq.patient_id = pvd.patient_id
 			and cq.visit_date = pvd.visit_date
 			and cq.drug_inventory_id = pvd.drug_inventory_id
+		where o.voided = 0
 		group by
 			pvd.patient_id,
 			pvd.visit_date,
@@ -758,6 +759,7 @@ union all
 			cq.patient_id = pvd.patient_id
 			and cq.visit_date = pvd.visit_date
 			and cq.drug_inventory_id = pvd.drug_inventory_id
+		where o.voided = 0
 		group by
 			pvd.patient_id,
 			pvd.visit_date,
@@ -787,6 +789,7 @@ INNER JOIN (
 			DATE(o.obs_datetime)
         ) pp ON
 	pp.obs_id = o.obs_id
+where o.voided = 0
 ),
 art_adherence as  
 (
@@ -814,7 +817,8 @@ join arv_drug ad on
 	do.drug_inventory_id = ad.drug_id
 WHERE
 	o.concept_id = 6987
-),
+	and o.voided = 0
+	and oo.voided = 0),
 lab_tests_data as
 (
 SELECT
@@ -892,7 +896,7 @@ test_type_concepts AS (
 )
 	SELECT
 		DISTINCT
-    o.patient_id,
+        o.patient_id,
 		rft.reason_for_testing AS lab_reason_for_test,
 		DATE(o.start_date) AS lab_order_test_date,
 		test_type.name AS lab_test_type,
@@ -948,7 +952,7 @@ test_type_concepts AS (
 	UNION ALL
 		SELECT
 			DISTINCT
-    o.person_id AS patient_id,
+            o.person_id AS patient_id,
 			coalesce(rft.reason_for_testing, NULL) AS lab_reason_for_test,
 			DATE(o.obs_datetime) as lab_order_test_date,
 			'Viral Load' AS lab_test_type,
@@ -975,6 +979,8 @@ test_type_concepts AS (
 		WHERE
 			o.concept_id = 856
 			AND o.voided = 0
+			and e.voided = 0
+			and cn.voided = 0
 			AND o.order_id IS NULL
 			AND o.person_id IS NOT NULL
 			AND COALESCE(o.value_text, o.value_numeric) IS NOT NULL
